@@ -50,3 +50,5 @@ To install the required libraries, run:
 
 ```bash
 pip install gTTS pandas requests
+or
+pip3 install gTTS pandas requests
