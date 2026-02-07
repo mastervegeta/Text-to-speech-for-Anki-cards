@@ -1,6 +1,6 @@
 # Text-to-Speech Script Documentation
 
-**Currently v1 is ready, this script _REQUIRES_ AnkiConnect to function:** [https://ankiweb.net/shared/info/2055492159](https://ankiweb.net/shared/info/2055492159)
+**Currently v2 is ready, this script _REQUIRES_ AnkiConnect to function:** [https://ankiweb.net/shared/info/2055492159](https://ankiweb.net/shared/info/2055492159)
 
 ## TO USE
 Your deck must contain fields named:
