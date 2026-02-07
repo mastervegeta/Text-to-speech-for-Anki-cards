@@ -1,0 +1,144 @@
+import pandas as pd
+from gtts import gTTS
+import os
+import requests
+import json
+
+
+
+def text_to_speech_from_csv(csv_file, output_dir):
+    # Read the CSV file
+    df = pd.read_csv(csv_file)
+
+    # Make sure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Iterate through each row in the DataFrame
+    for index, row in df.iterrows():
+        sentence = row['Sentence']  # Get the sentence from the current row
+        if pd.notna(sentence):  # Check if the sentence is not NaN
+            # Create a gTTS object
+            tts = gTTS(text=sentence, lang='ja')  # Use 'ja' for Japanese sentences
+
+            # Define the output file path
+            output_file = os.path.join(output_dir, f"{row['Expression']}_{index + 1}.mp3")
+
+            # Save the audio file
+            try:
+                tts.save(output_file)
+                print(f'Saved: {output_file}')
+            except Exception as e:
+                print(f"Error saving {output_file}: {e}")
+
+#ONLY THIS NEEDS TO BE EDITED BEFORE RUNNING
+my_csv_file = '/Users/veikkakortelainen/Documents/VeikanSekoilut/CSF tiedostot/[AnkiDojo]路地_乱暴_破く 2.csv'  # Replace with your CSV file name if different
+####
+
+my_audio_dir = '/Users/veikkakortelainen/Documents/VeikanSekoilut/AudiotAnkiin'   # Directory to save the MP3 files
+#text_to_speech_from_csv(csv_file, output_dir)
+
+#collection mediaan suoraan
+my_anki_collection_dir = '/Users/veikkakortelainen/Library/Application Support/Anki2/toinenprof/collection.media'   # Directory to save the MP3 files
+#/Users/veikkakortelainen/Library/Application Support/Anki2/toinenprof/collection.media
+
+def find_audio_file(word, audio_dir):
+    # Search for the audio file that contains the word in its name
+    for filename in os.listdir(audio_dir):
+        if word in filename:
+            return os.path.join(audio_dir, filename)
+    return None
+
+
+#not used for anything
+def find_audio_file2(word, audio_dir):
+    # Search for the audio file that contains the word in its name
+    for filename in os.listdir(audio_dir):
+        if word in filename:
+            return filename
+    return None
+
+
+
+def update_anki_cards(csv_file, audio_dir):
+    # Load the CSV file
+    df = pd.read_csv(csv_file)
+
+
+
+    # Iterate through each row in the DataFrame
+    for index, row in df.iterrows():
+        word = row['Expression']  # Get the word from the current row
+        kana = row['Reading']  # Get the kana from the current row
+        sentence = row['Sentence']  # Get the sentence for context
+        meaning = row['Glossary']  # Get the meaning for the card
+        audio_file_path = find_audio_file(word, audio_dir)  # Find the corresponding audio file
+        audio_file2 = find_audio_file2(word, audio_dir)
+
+        note_id_payload = {
+            'action': 'findNotes',
+            'version': 6,
+            'params': {
+                'query' : f'w:{word}'
+            }
+        }
+        response = requests.post('http://localhost:8765', json=note_id_payload)
+        print(response.json())
+        note_ids = response.json().get('result', [])
+        print(note_ids[0])
+
+        note_id = note_ids[0]
+
+
+
+#                        "oikeaAudio": f'[sound:{os.path.basename(audio_file_path)}]' if audio_file_path else '',
+
+
+        toinen_payload = {                
+            "action": "updateNoteFields",
+            "version": 6,
+            "params": {
+                "note": {
+                    "deckName": "japanese läppär",
+                    "modelName": "Japani-immersionread",
+                    "id":note_id,
+                    "fields": {
+                        "Word": word,
+                        "Kana": kana,
+                        "Sentence":sentence,
+                        "Meaning":meaning,
+                        "oikeaAudio": f'[sound:{os.path.basename(audio_file_path)}]' if audio_file_path else '',
+                        
+                        "Pitch": "",
+                        "Audio": "",
+                        "Picture": ""
+                    },
+                    "tags": [
+                        "munkortit"
+                    ]
+                
+
+                    
+                }
+            }
+        }
+                    
+
+
+
+        # Send the request to AnkiConnect
+        response2 = requests.post('http://localhost:8765', json=toinen_payload)
+        print(response2.json())  # Print the response for debugging
+
+
+
+def make_txt_speech_into_ankicard(csv_file, oma_audio_dir, output_dir):
+
+    #Makes text to speech sentences for words in csv that it dumps in
+
+    text_to_speech_from_csv(csv_file, oma_audio_dir) #own folder
+    text_to_speech_from_csv(csv_file, output_dir) #anki's collection.media folder
+
+    #updates the anki cards "omaAudio" field to the appropriate audio file
+    update_anki_cards(csv_file, oma_audio_dir)
+
+make_txt_speech_into_ankicard(my_csv_file, my_audio_dir, my_anki_collection_dir)
