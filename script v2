@@ -1,0 +1,167 @@
+import pandas as pd
+from gtts import gTTS
+import os
+import requests
+import json
+
+
+
+
+languages = ["Japanese", "Mandarin", "Korean", "Spanish", "French", "Swedish", "Arabic"]
+chosen_language = "Japanese" #this is chosen in UI
+chosen_sentence_or_word = "Sentence" #this is chosen in UI
+chosen_anki_collection_dir = '/Users/veikkakortelainen/Library/Application Support/Anki2/toinenprof/collection.media'   # Directory to save the MP3 files This is chosen in UI
+
+
+lang_var = ""
+if chosen_language == "Japanese":
+    lang_var = "ja"
+elif chosen_language == "Mandarin":
+    lang_var = "zh-CN"
+elif chosen_language == "Korean":
+    lang_var = "ko"
+elif chosen_language == "Spanish":
+    lang_var = "es"
+elif chosen_language == "French":
+    lang_var = "fr"
+elif chosen_language == "Swedish":
+    lang_var = "sv"
+elif chosen_language == "Arabic":
+    lang_var = "ar"
+else:
+    print("ERROR no language chosen!")
+    lang_var = "en"
+
+chosen_deckname = "japanese läppär" #this is typed in UI
+
+#this creates a audio file straight to the anki.collection
+def text_to_speech_from_sentence_or_word(sentence_or_word, word, output_dir):
+
+
+
+    # Make sure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    if pd.notna(sentence_or_word):  # Check if the sentence is not NaN
+        # Create a gTTS object
+        tts = gTTS(text=sentence_or_word, lang=lang_var)  # depends on user input
+
+        # Define the output file path
+        output_file = os.path.join(output_dir, f"{word}.mp3")
+
+        # Save the audio file
+        try:
+            tts.save(output_file)
+            print(f'Saved: {output_file}')
+        except Exception as e:
+            print(f"Error saving {output_file}: {e}")
+    else:
+        print("WTF Error")
+
+#use this to find audiofile to use for the update_anki_cards function
+def find_audio_file(word, audio_dir):
+    # Search for the audio file that contains the word in its name
+    for filename in os.listdir(audio_dir):
+        if word in filename:
+            return os.path.join(audio_dir, filename)
+    return None
+
+#last thing needed to do is to update the anki cards "Audio" field to contain [sound:word.mp3]
+
+def update_anki_cards(word, audio_dir):
+
+    audio_file_path = find_audio_file(word, audio_dir)  # Find the corresponding audio file
+
+    note_id_payload = {
+        'action': 'findNotes',
+        'version': 6,
+        'params': {
+            'query' : f'w:{word}'
+        }
+    }
+    response = requests.post('http://localhost:8765', json=note_id_payload)
+    #print(response.json())
+    note_ids = response.json().get('result', [])
+    #print(note_ids[0])
+
+    note_id = note_ids[0]
+
+
+
+
+    second_payload = {                
+        "action": "updateNoteFields",
+        "version": 6,
+        "params": {
+            "note": {
+                "deckName": f"{chosen_deckname}",
+                #"modelName": "Japani-immersionread",
+                "id":note_id,
+                "fields": {
+                    "Audio": f'[sound:{os.path.basename(audio_file_path)}]' if audio_file_path else '',                       
+                },
+
+            
+
+                
+            }
+        }
+    }
+                    
+
+
+
+    # Send the request to AnkiConnect
+    response2 = requests.post('http://localhost:8765', json=second_payload)
+    print(response2.json())  # Print the response for debugging
+
+
+
+
+
+# find all notes in deck
+note_id_payload = {
+    'action': 'findNotes',
+    'version': 6,
+    'params': {
+        'query' : f'"deck:{chosen_deckname}"'
+    }
+}
+response_id_get = requests.post('http://localhost:8765', json=note_id_payload)
+
+note_ids = response_id_get.json().get('result', [])
+#print(note_ids) # it is a list containing all deck note ids
+
+# main for loop which loop through every card, it makes a audio file and sends it to anki.collection
+# and corresponding text to the "Audio" field of the card
+for id in note_ids:
+    
+    notes_info = {
+        'action': 'notesInfo',
+        'version': 6,
+        'params': {
+            "notes": [id] #change to id
+        }
+    }
+    response_id_use = requests.post('http://localhost:8765', json=notes_info)
+    #print(response_id_use.json())
+    data = response_id_use.json()
+
+    # Accessing the Sentence value
+    sentence_value = data['result'][0]['fields']['Sentence']['value']
+    #print(sentence_value)
+
+    #Accessing the Word value
+    word_value = data['result'][0]['fields']['Word']['value']
+    print(word_value)
+
+    #logic for choosing whether to make the text-to-speech of the sentence vs. word
+    if chosen_sentence_or_word == "Sentence":
+        text_to_speech_from_sentence_or_word(sentence_value, word_value, chosen_anki_collection_dir)
+    elif chosen_sentence_or_word == "Word":
+        text_to_speech_from_sentence_or_word(word_value, word_value, chosen_anki_collection_dir)
+    else:
+        print("You didn't choose a Sentence, vs. a Word")
+
+
+    update_anki_cards(word_value, chosen_anki_collection_dir)
