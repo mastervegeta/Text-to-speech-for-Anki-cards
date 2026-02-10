@@ -9,14 +9,8 @@ from tkinter import ttk
 import threading
 import time
 
-
-
-#this creates a audio file straight to the anki.collection
+# Function to create audio files straight to the anki.collection
 def text_to_speech_from_sentence_or_word(sentence_or_word_1, word_1, output_dir_1, lang_var_1):
-
-
-
-    # Make sure the output directory exists
     os.makedirs(output_dir_1, exist_ok=True)
 
     if pd.notna(sentence_or_word_1):  # Check if the sentence is not NaN
@@ -35,93 +29,58 @@ def text_to_speech_from_sentence_or_word(sentence_or_word_1, word_1, output_dir_
     else:
         print("WTF Error")
 
-#use this to find audiofile to use for the update_anki_cards function
-def find_audio_file(word_2, audio_dir_2):
-    # Search for the audio file that contains the word in its name
-    for filename in os.listdir(audio_dir_2):
-        if word_2 in filename:
-            return os.path.join(audio_dir_2, filename)
-    return None
-
-#last thing needed to do is to update the anki cards "Audio" field to contain [sound:word.mp3]
-
+# Function to update Anki cards
 def update_anki_cards(word_3, audio_dir_3, chosen_deckname_3):
-
     audio_file_path = find_audio_file(word_3, audio_dir_3)  # Find the corresponding audio file
-
     note_id_payload = {
         'action': 'findNotes',
         'version': 6,
         'params': {
-            'query' : f'w:{word_3}'
+            'query': f'w:{word_3}'
         }
     }
     response = requests.post('http://localhost:8765', json=note_id_payload)
-    #print(response.json())
     note_ids = response.json().get('result', [])
-    #print(note_ids[0])
-
-    note_id = note_ids[0]
-
-
-
-
-    second_payload = {                
-        "action": "updateNoteFields",
-        "version": 6,
-        "params": {
-            "note": {
-                "deckName": f"{chosen_deckname_3}",
-                #"modelName": "Japani-immersionread",
-                "id":note_id,
-                "fields": {
-                    "Audio": f'[sound:{os.path.basename(audio_file_path)}]' if audio_file_path else '',                       
-                },
-
-            
-
-                
+    if note_ids:
+        note_id = note_ids[0]
+        second_payload = {
+            "action": "updateNoteFields",
+            "version": 6,
+            "params": {
+                "note": {
+                    "deckName": f"{chosen_deckname_3}",
+                    "id": note_id,
+                    "fields": {
+                        "Audio": f'[sound:{os.path.basename(audio_file_path)}]' if audio_file_path else '',
+                    },
+                }
             }
         }
-    }
-                    
+        # Send the request to AnkiConnect
+        response2 = requests.post('http://localhost:8765', json=second_payload)
+        print(response2.json())  # Print the response for debugging
 
-
-
-    # Send the request to AnkiConnect
-    response2 = requests.post('http://localhost:8765', json=second_payload)
-    print(response2.json())  # Print the response for debugging
-
-
-
-
-# Function to select Anki collection directory used for the widget
-def select_collection_directory():
-    directory = filedialog.askdirectory()
-    collection_dir_var.set(directory)
-
-
-#this is called when pressing the button
+# Function to process audio files and show loading window
 def process_audio_files():
-
     # Create a new window for the loading bar
     loading_window = customtkinter.CTkToplevel(root)
-    loading_window.title("Processing...")
-    loading_window.geometry("300x100")
+    loading_window.title("Processing... (Keep Anki open!)")
+    loading_window.geometry("300x150")
 
     # Create a progress bar
     progress_bar = ttk.Progressbar(loading_window, orient="horizontal", mode="indeterminate")
     progress_bar.pack(pady=20, padx=20, fill="x")
     progress_bar.start()  # Start the progress bar animation
 
+    # Create a label to show the count of processed words
+    processed_count_label = customtkinter.CTkLabel(loading_window, text="Processed: 0 out of 0", font=("Arial", 14))
+    processed_count_label.pack(pady=10)
+
     # Start the audio processing in a separate thread
-    threading.Thread(target=process_audio_files_in_background, args=(loading_window,)).start()
+    threading.Thread(target=process_audio_files_in_background, args=(loading_window, processed_count_label)).start()
 
-
-#this is called by process_audio_files function
-def process_audio_files_in_background(loading_window):
-    
-        # create audio files and update Anki cards
+# Function to process audio files in the background
+def process_audio_files_in_background(loading_window, processed_count_label):
     chosen_language = language_var.get()
     chosen_sentence_or_word = sentence_or_word_var.get()
     chosen_anki_collection_dir = collection_dir_var.get()
@@ -138,58 +97,48 @@ def process_audio_files_in_background(loading_window):
         "Swedish🇸🇪": "sv",
         "Arabic🇸🇦": "ar"
     }
-
     lang_var = lang_map.get(chosen_language, "en")
 
-
-        # find all notes in deck
+    # Find all notes in the deck
     note_id_payload = {
         'action': 'findNotes',
         'version': 6,
         'params': {
-            'query' : f'"deck:{chosen_deckname}"'
+            'query': f'"deck:{chosen_deckname}"'
         }
     }
     response_id_get = requests.post('http://localhost:8765', json=note_id_payload)
-
     note_ids = response_id_get.json().get('result', [])
-    #print(note_ids) # it is a list containing all deck note ids
 
-  
+    total_files = len(note_ids)  # Get total number of files
+    processed_count = 1  # Initialize processed count
 
+
+    # Process each note
     for id in note_ids:
-
         notes_info = {
             'action': 'notesInfo',
             'version': 6,
             'params': {
-                "notes": [id] #change to id
+                "notes": [id]  # Change to id
             }
         }
         response_id_use = requests.post('http://localhost:8765', json=notes_info)
-        #print(response_id_use.json())
         data = response_id_use.json()
-        #print(data)
-
 
         # Accessing the Sentence value
         sentence_value = data['result'][0]['fields']['Sentence']['value']
         AUDIO_value = data['result'][0]['fields']['Audio']['value']
-        #print(sentence_value)
-        #print(AUDIO_value)
 
-        #Accessing the Word value
+        # Accessing the Word value
         word_value = data['result'][0]['fields']['Word']['value']
         print(word_value)
 
-        #
         if AUDIO_value == "" or chosen_to_overwrite == "Yes":
-
-            #logic for choosing whether to make the text-to-speech of the sentence vs. word
+            # Logic for choosing whether to make the text-to-speech of the sentence vs. word
             if chosen_sentence_or_word == "Sentence":
                 text_to_speech_from_sentence_or_word(sentence_value, word_value, chosen_anki_collection_dir, lang_var)
                 print(f"Made sentence audio for {word_value}")
-
             elif chosen_sentence_or_word == "Word":
                 text_to_speech_from_sentence_or_word(word_value, word_value, chosen_anki_collection_dir, lang_var)
                 print(f"Made word audio for {word_value}")
@@ -198,19 +147,10 @@ def process_audio_files_in_background(loading_window):
 
             update_anki_cards(word_value, chosen_anki_collection_dir, chosen_deckname)
 
-        #if the audio already exists dont make another
-        else:
-            continue
-
-
-
-
-
-
-
-
-
-
+        # Update the processed count
+        
+        processed_count += 1
+        processed_count_label.configure(text=f"Processed: {processed_count} out of {total_files}")
 
     # Show a message box to indicate completion
     messagebox.showinfo("Success", "Audio files processed successfully!")
@@ -218,20 +158,12 @@ def process_audio_files_in_background(loading_window):
     # Close the loading window
     loading_window.destroy()
 
+# Function to select Anki collection directory
+def select_collection_directory():
+    directory = filedialog.askdirectory()
+    collection_dir_var.set(directory)
 
-
-
-
-
-
-
-
-
-
-#code for the main window
-
-# Set appearance mode and color theme
-customtkinter.set_appearance_mode("System")
+customtkinter.set_appearance_mode("dark")
 customtkinter.set_default_color_theme("green")
 
 # Create the main window
@@ -273,74 +205,25 @@ overwrite_var = customtkinter.StringVar(value="No")
 overwrite_label = customtkinter.CTkLabel(master=frame, text="Overwrite Existing Audio Files:", font=("Arial", 14))
 overwrite_label.grid(row=3, column=0, pady=12, sticky="w")
 overwrite_menu = customtkinter.CTkOptionMenu(master=frame, variable=overwrite_var, values=["Yes", "No"])
-overwrite_menu.grid(row=3, column=1, pady=12, sticky="ew")
+overwrite_menu.grid(row=3, column=1, pady=12, padx=5, sticky="ew")
 
 # Deck name input
 deckname_var = customtkinter.StringVar(value="")
 deckname_label = customtkinter.CTkLabel(master=frame, text="Deck Name:", font=("Arial", 14))
 deckname_label.grid(row=4, column=0, pady=12, sticky="w")
 deckname_entry = customtkinter.CTkEntry(master=frame, textvariable=deckname_var, placeholder_text="Enter Deck Name")
-deckname_entry.grid(row=4, column=1, pady=12, sticky="ew")
+deckname_entry.grid(row=4, column=1, pady=12, padx=5, sticky="ew")
 
 # Process button
 process_button = customtkinter.CTkButton(master=frame, text="Generate Text-to-Speech",
-                                          width=200, height=40,
-                                            font=("Arial", 16),
-                                            hover_color="darkred", 
-                                            cursor="hand", command=process_audio_files)#, command=process_audio_files)
-
-process_button.grid(row=5, column=0, columnspan=3, pady=20)
+                                          width=200, height=50,
+                                          font=("Arial", 16),
+                                          hover_color="darkred", 
+                                          cursor="hand", command=process_audio_files)
+process_button.grid(row=5, column=0, columnspan=3, pady=20, padx=5)
 
 # Configure column weights for better resizing
 frame.columnconfigure(1, weight=1)  # Allow the second column to expand
 
 # Start the main loop
 root.mainloop()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#chosen_language = "Japanese" #this is chosen in UI
-#chosen_sentence_or_word = "Sentence" #this is chosen in UI
-#chosen_anki_collection_dir = '/Users/veikkakortelainen/Library/Application Support/Anki2/toinenprof/collection.media'   # Directory to save the MP3 files This is chosen in UI
-#chosen_to_overwrite = "No" #this is chosen in UI
-#chosen_deckname = "japanese läppär" #this is typed in UI
-
-
-
-
-
-
-
-#print(note_ids) # it is a list containing all deck note ids
-
-# main for loop which loop through every card, it makes a audio file and sends it to anki.collection
-# and corresponding text to the "Audio" field of the card
